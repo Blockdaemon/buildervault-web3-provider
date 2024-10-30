@@ -8,6 +8,7 @@ const tsmsdkv2_1 = require("@sepior/tsmsdkv2");
 // @ts-ignore
 const asn1_js_1 = __importDefault(require("asn1.js"));
 const web3_utils_1 = require("web3-utils");
+const web3_eth_abi_1 = require("web3-eth-abi");
 const web3_eth_accounts_1 = require("web3-eth-accounts");
 const util_1 = __importDefault(require("util"));
 const utils_1 = require("./utils");
@@ -140,19 +141,18 @@ class BuildervaultWeb3Provider extends HttpProvider {
                             throw error;
                         }
                         break;
-                    // Todo:
-                    // case "personal_sign":
-                    // case "eth_sign":
-                    //   result = await this.createPersonalSign(payload.params[1], payload.params[0], TYPED_MESSAGE, ETH_MESSAGE);
-                    //   break;
-                    // case "eth_signTypedData":
-                    // case "eth_signTypedData_v1":
-                    // case "eth_signTypedData_v3":
-                    // case "eth_signTypedData_v4":
-                    //   result = await this.createPersonalSign(payload.params[0], payload.params[1], TYPED_MESSAGE, EIP712);
-                    //   break;
-                    // case "eth_signTypedData_v2":
-                    // case "eth_signTransaction":
+                    case "personal_sign":
+                    case "eth_sign":
+                        result = await this.createPersonalSign(payload.params[1], payload.params[0]);
+                        break;
+                    case "eth_signTypedData":
+                    case "eth_signTypedData_v1":
+                    case "eth_signTypedData_v3":
+                    case "eth_signTypedData_v4":
+                        result = await this.createTypedDataSign(payload.params[0], payload.params[1]);
+                        break;
+                    case "eth_signTypedData_v2":
+                    case "eth_signTransaction":
                     default:
                         const jsonRpcResponse = await util_1.default.promisify(super.send).bind(this)(payload);
                         if (jsonRpcResponse.error) {
@@ -197,13 +197,42 @@ class BuildervaultWeb3Provider extends HttpProvider {
     }
     async sendTransaction(transaction) {
         await this.initialized();
-        if (transaction.chainId && Number(transaction.chainId) != Number(this.chainId)) {
-            throw this.createError({ message: `Chain ID of the transaction (${transaction.chainId}) does not match the chain ID of the BuildervaultWeb3Provider (${this.chainId})` });
+        if (transaction.chainId == undefined) {
+            transaction.chainId = this.chainId;
+        }
+        else {
+            if (Number(transaction.chainId) != Number(this.chainId)) {
+                throw this.createError({ message: `Chain ID of the transaction (${transaction.chainId}) does not match the chain ID of the BuildervaultWeb3Provider (${this.chainId})` });
+            }
         }
         if (transaction.from != this.accountsAddresses[this.accountId][this.addressIndex]) {
             throw this.createError({ message: `Transaction sent from an unsupported address: ${transaction.from}` });
         }
-        transaction.gasLimit = 21000;
+        if (transaction.nonce == undefined) {
+            let args = {
+                method: 'eth_getTransactionCount',
+                params: [transaction.from, "pending"]
+            };
+            const nonce = await this.request(args);
+            transaction.nonce = (0, web3_utils_1.hexToNumber)(nonce);
+        }
+        if (transaction.type == undefined) {
+            transaction.type = 2;
+        }
+        if (transaction.gasLimit == undefined) {
+            let args = {
+                method: 'eth_estimateGas',
+                params: [{
+                        from: transaction.from,
+                        to: transaction.to,
+                        value: transaction.value,
+                        data: transaction.data
+                    }]
+            };
+            const gasLimit = await this.request(args);
+            transaction.gasLimit = (0, web3_utils_1.hexToNumber)(gasLimit);
+        }
+        // ToDo maxFeePerGas and maxPriorityFeePerGas
         const unsignedTx = web3_eth_accounts_1.FeeMarketEIP1559Transaction.fromTxData(transaction);
         const unsignedTxHash = unsignedTx.getMessageToSign(true);
         console.log('Raw unisgned transaction:', (0, web3_utils_1.toHex)(unsignedTx.serialize()));
@@ -211,39 +240,104 @@ class BuildervaultWeb3Provider extends HttpProvider {
         const signedTransaction = unsignedTx._processSignature(v.valueOf(), (0, web3_utils_1.hexToBytes)(r), (0, web3_utils_1.hexToBytes)(s));
         const serializeTx = web3_eth_accounts_1.FeeMarketEIP1559Transaction.fromTxData(signedTransaction).serialize();
         console.log('Broadcasting signed transaction:', (0, web3_utils_1.toHex)(serializeTx));
-        const args = {
+        let args = {
             method: 'eth_sendRawTransaction',
             params: [(0, web3_utils_1.toHex)(serializeTx)]
         };
         const signedTxHash = this.request(args);
         return signedTxHash;
     }
-    // private async createPersonalSign(address: string, content: any, operation: TransactionOperation, type: RawMessageType): Promise<string> {
-    //   await this.initialized()
-    //   const accountId = this.acountIdAndValidateExistence(address, `Signature request from an unsupported address: `);
-    //   let finalContent = content;
-    //   if (type === EIP712) {
-    //     if (typeof content !== 'object') {
-    //       finalContent = JSON.parse(content);
-    //     } else {
-    //       finalContent = content;
-    //     }
-    //   } else if (finalContent.startsWith("0x")) {
-    //     finalContent = finalContent.substring(2);
-    //   }
-    //   let message;
-    //   if (operation === TYPED_MESSAGE) {
-    //     message = {
-    //       content: finalContent,
-    //       index: 0,
-    //       type: type,
-    //     };
-    //   } else {
-    //     message = {
-    //       content: finalContent
-    //     };
-    //   }
-    // }
+    async createPersonalSign(address, content) {
+        await this.initialized();
+        //ToDo look up address
+        if (address != this.accountsAddresses[this.accountId][this.addressIndex]) {
+            throw this.createError({ message: `Signature request from an unsupported address: ${address}` });
+        }
+        // https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_sign
+        const message = (0, web3_utils_1.hexToString)(content);
+        const messageHashBytes = (0, web3_utils_1.hexToBytes)((0, web3_eth_accounts_1.hashMessage)(message));
+        const signature = await this.signTx(messageHashBytes, this.masterKeyId, this.chainPath);
+        return signature.r + signature.s.slice(2) + signature.v.toString(16);
+    }
+    async createTypedDataSign(address, content) {
+        await this.initialized();
+        //ToDo look up address
+        if (address != this.accountsAddresses[this.accountId][this.addressIndex]) {
+            throw this.createError({ message: `Signature request from an unsupported address: ${address}` });
+        }
+        const domainSeparator = this.structHash('EIP712Domain', content.domain);
+        const message = content.message;
+        const messageHash = (0, web3_utils_1.keccak256)(Buffer.concat([
+            Buffer.from('1901', 'hex'),
+            domainSeparator,
+            this.structHash(content.primaryType, message),
+        ]));
+        const messageHashBytes = (0, web3_utils_1.hexToBytes)(messageHash);
+        const signature = await this.signTx(messageHashBytes, this.masterKeyId, this.chainPath);
+        return signature.r + signature.s.slice(2) + signature.v.toString(16);
+    }
+    async structHash(primaryType, data) {
+        const types = {
+            EIP712Domain: [
+                { name: 'name', type: 'string' },
+                { name: 'version', type: 'string' },
+                { name: 'chainId', type: 'uint256' },
+                { name: 'verifyingContract', type: 'address' },
+            ],
+        };
+        const encTypes = [];
+        const encValues = [];
+        // Add typehash
+        encTypes.push('bytes32');
+        encValues.push(this.typeHash(primaryType));
+        // Add field contents
+        for (const field of types[primaryType]) {
+            const value = data[field.name];
+            if (field.type == 'string' || field.type == 'bytes') {
+                encTypes.push('bytes32');
+                const valueHash = (0, web3_utils_1.keccak256)(value);
+                encValues.push(valueHash);
+            }
+            else if (types[field.type] !== undefined) {
+                encTypes.push('bytes32');
+                const valueHash = await this.structHash(field.type, value);
+                encValues.push(valueHash);
+            }
+            else if (field.type.lastIndexOf(']') === field.type.length - 1) {
+                throw 'TODO: Arrays currently unimplemented in encodeData';
+            }
+            else {
+                encTypes.push(field.type);
+                encValues.push(value);
+            }
+        }
+        return (0, web3_utils_1.keccak256)((0, web3_eth_abi_1.encodeParameter)(encTypes, encValues));
+    }
+    async typeHash(primaryType) {
+        const types = {
+            EIP712Domain: [
+                { name: 'name', type: 'string' },
+                { name: 'version', type: 'string' },
+                { name: 'chainId', type: 'uint256' },
+                { name: 'verifyingContract', type: 'address' },
+            ],
+        };
+        const typeList = [primaryType];
+        const typeHashList = [];
+        while (typeList.length > 0) {
+            const type = typeList.shift();
+            const typeHash = (0, web3_utils_1.keccak256)(Buffer.from(type));
+            typeHashList.push(typeHash);
+            if (types[type]) {
+                for (const field of types[type]) {
+                    if (types[field.type]) {
+                        typeList.push(field.type);
+                    }
+                }
+            }
+        }
+        return (0, web3_utils_1.keccak256)((0, web3_eth_abi_1.encodeParameter)('bytes32[]', [typeHashList]));
+    }
     async signTx(messageToSign, masterKeyId, chainPath) {
         console.log(`Builder Vault signing transaction hash...`);
         let player0config;

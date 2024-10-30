@@ -1,11 +1,12 @@
 import { TSMClient, Configuration, SessionConfig } from "@sepior/tsmsdkv2";
 // @ts-ignore
 import asn1 from "asn1.js";
-import { keccak256, toHex, hexToBytes, toChecksumAddress } from 'web3-utils';
-import { FeeMarketEIP1559Transaction } from 'web3-eth-accounts';
+import { keccak256, toHex, hexToBytes, toChecksumAddress, hexToString, hexToNumber } from 'web3-utils';
+import { encodeParameters } from 'web3-eth-abi';
+import { FeeMarketEIP1559Transaction, hashMessage } from 'web3-eth-accounts';
 import util from "util";
 import { promiseToFunction } from "./utils";
-import { AccountAddresses, BuildervaultProviderConfig, EthereumSignature, ProviderRpcError, RequestArguments,  } from "./types";
+import { AccountAddresses, BuildervaultProviderConfig, EthereumSignature, ProviderRpcError, RequestArguments } from "./types";
 import { DEBUG_NAMESPACE_REQUESTS_AND_RESPONSES } from "./constants";
 import { formatJsonRpcRequest, formatJsonRpcResult } from "./jsonRpcUtils";
 import Debug from "debug";
@@ -181,19 +182,19 @@ export class BuildervaultWeb3Provider extends HttpProvider {
             }
             break;
 
-          // Todo:
-          // case "personal_sign":
-          // case "eth_sign":
-          //   result = await this.createPersonalSign(payload.params[1], payload.params[0], TYPED_MESSAGE, ETH_MESSAGE);
-          //   break;
-          // case "eth_signTypedData":
-          // case "eth_signTypedData_v1":
-          // case "eth_signTypedData_v3":
-          // case "eth_signTypedData_v4":
-          //   result = await this.createPersonalSign(payload.params[0], payload.params[1], TYPED_MESSAGE, EIP712);
-          //   break;
-          // case "eth_signTypedData_v2":
-          // case "eth_signTransaction":
+          case "personal_sign":
+          case "eth_sign":
+            result = await this.createPersonalSign(payload.params[1], payload.params[0]);
+            break;
+          
+          case "eth_signTypedData":
+          case "eth_signTypedData_v1":
+          case "eth_signTypedData_v3":
+          case "eth_signTypedData_v4":
+            result = await this.createTypedDataSign(payload.params[0], payload.params[1]);
+            break;
+          case "eth_signTypedData_v2":
+          case "eth_signTransaction":
 
           default:
             const jsonRpcResponse = await util.promisify<any, any>(super.send).bind(this)(payload)
@@ -253,15 +254,46 @@ export class BuildervaultWeb3Provider extends HttpProvider {
 
   private async sendTransaction(transaction: any) {
     await this.initialized()
-    if (transaction.chainId && Number(transaction.chainId) != Number(this.chainId)) {
-      throw this.createError({ message: `Chain ID of the transaction (${transaction.chainId}) does not match the chain ID of the BuildervaultWeb3Provider (${this.chainId})` })
+
+    if (transaction.chainId === undefined) {
+      transaction.chainId = this.chainId
+    } else {
+      if (Number(transaction.chainId) != Number(this.chainId)) {
+        throw this.createError({ message: `Chain ID of the transaction (${transaction.chainId}) does not match the chain ID of the BuildervaultWeb3Provider (${this.chainId})` })
+      }
     }
 
     if (transaction.from != this.accountsAddresses[this.accountId][this.addressIndex]) {
       throw this.createError({ message: `Transaction sent from an unsupported address: ${transaction.from}` })
     }
 
-    transaction.gasLimit = 21000;
+    if (transaction.nonce === undefined) {
+      let args: RequestArguments = {
+        method: 'eth_getTransactionCount',
+        params: [transaction.from, "pending"]
+      }
+      const nonce = await this.request(args);
+      transaction.nonce = hexToNumber(nonce);
+    }
+
+    if (transaction.type === undefined) {
+      transaction.type = 2;
+    }
+
+    if (transaction.gasLimit === undefined) {
+      let args: RequestArguments = {
+        method: 'eth_estimateGas',
+        params: [{
+          from: transaction.from,
+          to: transaction.to,
+          value: transaction.value,
+          data: transaction.data}]
+      }
+      const gasLimit = await this.request(args);
+      transaction.gasLimit = hexToNumber(gasLimit);
+    }
+    // ToDo maxFeePerGas and maxPriorityFeePerGas
+
     const unsignedTx = FeeMarketEIP1559Transaction.fromTxData(transaction);
     const unsignedTxHash = unsignedTx.getMessageToSign(true);
     console.log('Raw unisgned transaction:', toHex(unsignedTx.serialize()));
@@ -273,7 +305,7 @@ export class BuildervaultWeb3Provider extends HttpProvider {
     const serializeTx = FeeMarketEIP1559Transaction.fromTxData(signedTransaction).serialize();
     console.log('Broadcasting signed transaction:', toHex(serializeTx));
 
-    const args: RequestArguments = {
+    let args: RequestArguments = {
       method: 'eth_sendRawTransaction',
       params: [toHex(serializeTx)]
     }
@@ -282,35 +314,132 @@ export class BuildervaultWeb3Provider extends HttpProvider {
     return signedTxHash;
   }
 
-  // private async createPersonalSign(address: string, content: any, operation: TransactionOperation, type: RawMessageType): Promise<string> {
-  //   await this.initialized()
-  //   const accountId = this.acountIdAndValidateExistence(address, `Signature request from an unsupported address: `);
+  private async createPersonalSign(address: string, content: any): Promise<string> {
+    await this.initialized()
 
-  //   let finalContent = content;
+    //ToDo look up address
+    if (address != this.accountsAddresses[this.accountId][this.addressIndex]) {
+      throw this.createError({ message: `Signature request from an unsupported address: ${address}` })
+    }
 
-  //   if (type === EIP712) {
-  //     if (typeof content !== 'object') {
-  //       finalContent = JSON.parse(content);
-  //     } else {
-  //       finalContent = content;
-  //     }
-  //   } else if (finalContent.startsWith("0x")) {
-  //     finalContent = finalContent.substring(2);
-  //   }
+    // https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_sign
+    const message = hexToString(content);
+    const messageHashBytes = hexToBytes(hashMessage(message));
 
-  //   let message;
-  //   if (operation === TYPED_MESSAGE) {
-  //     message = {
-  //       content: finalContent,
-  //       index: 0,
-  //       type: type,
-  //     };
-  //   } else {
-  //     message = {
-  //       content: finalContent
-  //     };
-  //   }
-  // }
+    const signature = await this.signTx(messageHashBytes, this.masterKeyId, this.chainPath);
+
+    return signature.r + signature.s.slice(2) + signature.v.toString(16);
+  }
+
+  private async createTypedDataSign(address: string, content: any): Promise<string> {
+    await this.initialized()
+
+    //ToDo look up address
+    if (address != this.accountsAddresses[this.accountId][this.addressIndex]) {
+      throw this.createError({ message: `Signature request from an unsupported address: ${address}` })
+    }
+
+    // Compute the domain separator
+    const domainSeparator = this.hashStruct('EIP712Domain', content.domain, content.types);
+
+    // Compute the message hash
+    const messageHash = this.hashStruct(content.primaryType, content.message, content.types);
+
+    // Compute the digest to sign
+    const digest = keccak256(
+      Buffer.concat([
+        Buffer.from('1901', 'hex'),
+        Buffer.from(domainSeparator.slice(2), 'hex'),
+        Buffer.from(messageHash.slice(2), 'hex'),
+      ])
+    );
+
+    const signature = await this.signTx(hexToBytes(digest), this.masterKeyId, this.chainPath);
+
+    return signature.r + signature.s.slice(2) + signature.v.toString(16);
+  }
+
+  // Helper function to find dependencies of the primary type
+  private findDependencies(primaryType: string, types: any, results?: Set<string>): Set<string> {
+    if (results === undefined) {
+      results = new Set<string>();
+    }
+    if (results.has(primaryType)) {
+      return results;
+    }
+    results.add(primaryType);
+    const fields = types[primaryType];
+    if (!fields) return results;
+    for (const field of fields) {
+      if (types[field.type]) {
+        this.findDependencies(field.type, types, results);
+      } else if (field.type.endsWith(']')) {
+        // Handle array types
+        const arrayType = field.type.slice(0, field.type.indexOf('['));
+        if (types[arrayType]) {
+          this.findDependencies(arrayType, types, results);
+        }
+      }
+    }
+    return results;
+  }
+
+  // Helper function to encode the type
+  private encodeType(primaryType: string, types: any): string {
+    let result = '';
+    const deps = Array.from(this.findDependencies(primaryType, types));
+    deps.splice(deps.indexOf(primaryType), 1);
+    deps.sort();
+    deps.unshift(primaryType);
+    for (const type of deps) {
+      const children = types[type];
+      result += `${type}(${children.map(({ type, name }: any) => `${type} ${name}`).join(',')})`;
+    }
+    return result;
+  }
+
+  // Helper function to compute type hash
+  private typeHash(primaryType: string, types: any): string {
+    return keccak256(this.encodeType(primaryType, types));
+  }
+
+  // Helper function to encode data
+  private encodeData(primaryType: string, data: any, types: any): string {
+    const encTypes: string[] = [];
+    const encValues: any[] = [];
+
+    // Add type hash
+    encTypes.push('bytes32');
+    encValues.push(this.typeHash(primaryType, types));
+
+    // Encode each field
+    for (const field of types[primaryType]) {
+      let value = data[field.name];
+      if (field.type === 'string' || field.type === 'bytes') {
+        value = keccak256(value);
+        encTypes.push('bytes32');
+        encValues.push(value);
+      } else if (types[field.type] !== undefined) {
+        // Struct
+        value = keccak256(this.encodeData(field.type, value, types));
+        encTypes.push('bytes32');
+        encValues.push(value);
+      } else if (field.type.lastIndexOf(']') === field.type.length - 1) {
+        throw new Error('Arrays are currently unimplemented in encodeData');
+      } else {
+        encTypes.push(field.type);
+        encValues.push(value);
+      }
+    }
+
+    return encodeParameters(encTypes, encValues);
+  }
+
+  // Helper function to compute struct hash
+  private hashStruct(primaryType: string, data: any, types: any): string {
+    return keccak256(this.encodeData(primaryType, data, types));
+  }
+
 
   private async signTx(
     messageToSign: Uint8Array,

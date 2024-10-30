@@ -17,6 +17,10 @@ export declare class BuildervaultWeb3Provider extends HttpProvider {
     sendAsync(payload: any, callback: (error: any, response: any) => void): void;
     request(args: RequestArguments): Promise<any>;
     private sendTransaction;
+    private createPersonalSign;
+    private createTypedDataSign;
+    private structHash;
+    private typeHash;
     private signTx;
 }
 export {};
