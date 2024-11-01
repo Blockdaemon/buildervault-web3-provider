@@ -2,7 +2,10 @@
   "name": "@blockdaemon/buildervault-web3-provider",
   "version": "0.0.1",
   "description": "EIP-1193 Compatible Ethereum provider for BuilderVault",
-  "repository": "github:blockdaemon/buildervault-web3-provider",
+  "repository": "https://github.com/blockdaemon/buildervault-web3-provider.git",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "author": "BuilderVault",
   "license": "MIT",
   "main": "dist/src/index.js",

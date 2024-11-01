@@ -1,0 +1,35 @@
+name: Build and Publish NPM Package
+
+on:
+  push:
+    branches:
+      - main
+    # Publish semver tags as releases.
+    tags: ["v*.*.*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Add @sepior/tsmsdkv2 Typescript Definitions 
+        run: cp ./types/* ./node_modules/@sepior/tsmsdkv2/
+
+      - name: Build TypeScript application
+        run: npm run build
+
+      - name: Publish to GitHub npm package registry
+        env:
+          NODE_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
+        run: npm publish --registry=https://npm.pkg.github.com/OWNER
