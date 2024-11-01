@@ -4,7 +4,9 @@ Blockdaemon BuilderVault [EIP-1193](https://eips.ethereum.org/EIPS/eip-1193) Com
 
 ## Installation
 ```bash
-npm config set @sepior:registry=https://gitlab.com/api/v4/projects/56306653/packages/npm/   # Builder Vault nodejsSDK repository
+npm config set @sepior:registry=https://gitlab.com/api/v4/projects/56306653/packages/npm/   # Builder Vault nodejsSDK public repository
+npm config set @blockdaemon:registry=https://npm.pkg.github.com/        # Builder Vault Web3 provider nodejsSDK private repository
+npm config set //npm.pkg.github.com/:_authToken=YOUR_GITHUB_PAT
 npm install @blockdaemon/buildervault-web3-provider
 ```
 
