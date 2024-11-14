@@ -4,6 +4,7 @@ import asn1 from "asn1.js";
 import { keccak256, toHex, hexToBytes, toChecksumAddress, hexToString, hexToNumber } from 'web3-utils';
 import { encodeParameters } from 'web3-eth-abi';
 import { FeeMarketEIP1559Transaction, hashMessage } from 'web3-eth-accounts';
+import crypto from "crypto";
 import util from "util";
 import { promiseToFunction } from "./utils";
 import { AccountAddresses, BuildervaultProviderConfig, EthereumSignature, ProviderRpcError, RequestArguments } from "./types";
@@ -16,12 +17,13 @@ const logRequestsAndResponses = Debug(DEBUG_NAMESPACE_REQUESTS_AND_RESPONSES);
 
 export class BuildervaultWeb3Provider extends HttpProvider {
   private config: BuildervaultProviderConfig;
-  private headers: { name: string, value: string }[] = [];
   private accountsAddresses: AccountAddresses = {};
   private accountId: number;
   private accountsPopulatedPromise: () => Promise<void>;
   private chainIdPopulatedPromise: () => Promise<void>;
   private requestCounter = 0;
+  private TSMClients: TSMClient[] = [];
+  private sessionConfig: SessionConfig = [];
 
   constructor(config: BuildervaultProviderConfig) {
     if (!config.rpcUrl) {
@@ -34,8 +36,6 @@ export class BuildervaultWeb3Provider extends HttpProvider {
     }
     Debug.enable(debugNamespaces.join(','))
 
-    const headers: { name: string, value: string }[] = []
-
     super(config.rpcUrl)
     this.config = config
 
@@ -45,14 +45,72 @@ export class BuildervaultWeb3Provider extends HttpProvider {
     this.chainPath = new Uint32Array([44, 60, this.accountId, 0, this.addressIndex]);
     this.accountsAddresses[this.accountId] = {};
 
-    this.headers = headers;
-
-    this.note = 'Created by BuilderVault Web3 Provider'
-
     this.chainIdPopulatedPromise = promiseToFunction(async () => { if (!this.chainId) return await this.populateChainId() })
     this.accountsPopulatedPromise = promiseToFunction(async () => { return await this.populateAccounts() })
   }
 
+  private async initializeTSMClients() {
+
+    // For each player create an authenticated TSMClient
+    if (this.config.playerCount) {
+      for (let i = 0; i < this.config.playerCount; i++) {
+        const playerUrlConfigKey = `player${i}Url`;
+        const playerApiKeyConfigKey = `player${i}ApiKey`;
+        const playerClientCertConfigKey = `player${i}ClientCert`;
+        const playerClientKeyConfigKey = `player${i}ClientKey`;
+        const playerMTLSpublicKeyConfigKey = `player${i}mTLSpublicKey`;
+
+        if (playerUrlConfigKey in this.config) {
+          const playerConfig = await new Configuration((this.config as { [key: string]: any })[playerUrlConfigKey]);
+
+          if (playerApiKeyConfigKey in this.config) {
+            await playerConfig.withAPIKeyAuthentication((this.config as { [key: string]: any })[playerApiKeyConfigKey]);
+          } else if (playerClientCertConfigKey in this.config && playerClientKeyConfigKey in this.config && playerMTLSpublicKeyConfigKey in this.config) {
+            const cert = new crypto.X509Certificate((this.config as { [key: string]: any })[playerMTLSpublicKeyConfigKey]);
+            await playerConfig.withMTLSAuthentication(
+              (this.config as { [key: string]: any })[playerClientKeyConfigKey],
+              (this.config as { [key: string]: any })[playerClientCertConfigKey],
+              cert.publicKey.export({ type: "spki", format: "der" })
+            );
+          } else {
+            throw new Error(`player${i} authentication credentials are required`);
+          }
+
+          this.TSMClients.push(await TSMClient.withConfiguration(playerConfig));
+        } else {
+          throw new Error(`${playerUrlConfigKey} not found`);
+        }
+
+      }
+
+      // If player MPC publickeys are defined construct new Dynamic SessionConfig
+      if (this.config.player0MPCpublicKey) {
+        const playerPubkeys = [];
+        const playerIds = new Uint32Array(Array(this.TSMClients.length).fill(0).map((_, i) => i));
+        for (let i = 0; i < this.config.playerCount; i++) {
+          const playerMPCpublicKeyConfigKey = Buffer.from(
+            (this.config as { [key: string]: any })[`player${i}MPCpublicKey`], "base64"
+          )
+          playerPubkeys.push(playerMPCpublicKeyConfigKey)
+        }
+        this.sessionConfig = await SessionConfig.newSessionConfig(
+          await SessionConfig.GenerateSessionID(),
+          playerIds,
+          playerPubkeys
+        );
+      // If player MPC publickeys are not defined construct new Static SessionConfig
+      } else {
+        this.sessionConfig = await SessionConfig.newStaticSessionConfig(
+          await SessionConfig.GenerateSessionID(),
+          this.TSMClients.length
+        );
+      }
+
+    } else {
+      throw new Error('playerCount is required');
+    }
+
+  }
 
   private async populateChainId() {
     const chainId = (await util.promisify<any, any>(super.send).bind(this)(formatJsonRpcRequest('eth_chainId', []))).result
@@ -64,27 +122,7 @@ export class BuildervaultWeb3Provider extends HttpProvider {
     if (this.accountsAddresses[0]?.[0] !== undefined) {
       throw this.createError({ message: "Accounts already populated" })
     }
-
-    let player0config
-    if (this.config.player0ApiKey) {
-      player0config = await new Configuration(this.config.player0Url);
-      await player0config.withAPIKeyAuthentication(this.config.player0ApiKey);
-    } else {
-      throw new Error('player0ApiKey is required');
-    }
-
-    let player1config
-    if (this.config.player1ApiKey) {
-      player1config = await new Configuration(this.config.player1Url);
-      await player1config.withAPIKeyAuthentication(this.config.player1ApiKey);
-    } else {
-      throw new Error('player1ApiKey is required');
-    }
-
-    const TSMClients: TSMClient[] = [
-      await TSMClient.withConfiguration(player0config),
-      await TSMClient.withConfiguration(player1config)
-    ];
+    await this.initializeTSMClients();
 
     // ToDo: include this.addressIndex in loop when outside 0-5
     for (let i = 0; i < 5; i++) {
@@ -92,7 +130,7 @@ export class BuildervaultWeb3Provider extends HttpProvider {
       let chainPath = new Uint32Array([44, 60, this.accountId, 0, i]);
       const pkixPublicKeys: Uint8Array[] = [];
     
-      for (const [_, client] of TSMClients.entries()) {
+      for (const [_, client] of await this.TSMClients.entries()) {
         const ecdsaApi = client.ECDSA();
         pkixPublicKeys.push(
           await ecdsaApi.publicKey(this.masterKeyId, chainPath)
@@ -109,7 +147,7 @@ export class BuildervaultWeb3Provider extends HttpProvider {
       const pkixPublicKey = pkixPublicKeys[0];
     
       // Convert the public key into an Ethereum address
-      const utils = TSMClients[0].Utils();
+      const utils = this.TSMClients[0].Utils();
       const publicKeyBytes = await utils.pkixPublicKeyToUncompressedPoint(
         pkixPublicKey
       );
@@ -300,7 +338,7 @@ export class BuildervaultWeb3Provider extends HttpProvider {
 
     const {r,s,v} = await this.signTx(unsignedTxHash, this.masterKeyId, this.chainPath);
 
-    const signedTransaction = unsignedTx._processSignature(v.valueOf(), hexToBytes(r), hexToBytes(s));
+    const signedTransaction = unsignedTx._processSignature(BigInt(v), hexToBytes(r), hexToBytes(s));
 
     const serializeTx = FeeMarketEIP1559Transaction.fromTxData(signedTransaction).serialize();
     console.log('Broadcasting signed transaction:', toHex(serializeTx));
@@ -447,45 +485,18 @@ export class BuildervaultWeb3Provider extends HttpProvider {
     chainPath: Uint32Array
   ): Promise<EthereumSignature> {
   
-  
     console.log(`Builder Vault signing transaction hash...`);
-  
-    let player0config
-    if (this.config.player0ApiKey) {
-      player0config = await new Configuration(this.config.player0Url);
-      await player0config.withAPIKeyAuthentication(this.config.player0ApiKey);
-    } else {
-      throw new Error('player0ApiKey is required');
-    }
-
-    let player1config
-    if (this.config.player1ApiKey) {
-      player1config = await new Configuration(this.config.player1Url);
-      await player1config.withAPIKeyAuthentication(this.config.player1ApiKey);
-    } else {
-      throw new Error('player1ApiKey is required');
-    }
-
-    const clients: TSMClient[] = [
-      await TSMClient.withConfiguration(player0config),
-      await TSMClient.withConfiguration(player1config)
-    ];
-
-    const sessionConfig = await SessionConfig.newStaticSessionConfig(
-      await SessionConfig.GenerateSessionID(),
-      clients.length
-    );
-  
+    
     const partialSignatures: Uint8Array[] = [];
   
     const partialSignaturePromises: Promise<void>[] = [];
   
-    for (const [_, client] of clients.entries()) {
+    for (const [_, client] of this.TSMClients.entries()) {
       const func = async (): Promise<void> => {
         const ecdsaApi = client.ECDSA();
         console.log(`Creating partialSignature with MPC player ${_}...`);
         const partialSignResult = await ecdsaApi.sign(
-          sessionConfig,
+          this.sessionConfig,
           masterKeyId,
           chainPath,
           messageToSign
@@ -499,7 +510,7 @@ export class BuildervaultWeb3Provider extends HttpProvider {
   
     await Promise.all(partialSignaturePromises);
   
-    const ecdsaApi = clients[0].ECDSA();
+    const ecdsaApi = this.TSMClients[0].ECDSA();
   
     const signature = await ecdsaApi.finalizeSignature(
       messageToSign,
@@ -519,7 +530,7 @@ export class BuildervaultWeb3Provider extends HttpProvider {
     return {
       r: "0x" + decodedSignature.r.toString(16),
       s: "0x" + decodedSignature.s.toString(16),
-      v: BigInt(signature.recoveryID! + 27),  //  Type 2 transaction with ._processSignature subtracts 27 Post EIP-155 should be: chainId * 2 + 35 + signature.recoveryID;
+      v: signature.recoveryID+27  //  Type 2 transaction with ._processSignature subtracts 27 Post EIP-155 should be: chainId * 2 + 35 + signature.recoveryID;
     };
   }
 

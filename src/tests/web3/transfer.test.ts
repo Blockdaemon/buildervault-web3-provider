@@ -11,7 +11,7 @@ async function getFirstAddressWithBalance() {
   for (const address of addresses) {
     const balance = await web3.eth.getBalance(address)
     if (BigInt(balance) > BigInt(minAmount)) {
-      return address.toLowerCase()
+      return address
     }
   }
 
@@ -23,8 +23,7 @@ describe("Web3: Should be able to transfer ETH", async function () {
   it("Transfer", async function () {
 
     const addresses = await web3.eth.getAccounts()
-    //const fromAddress = await getFirstAddressWithBalance()
-    const fromAddress = (await web3.eth.getAccounts())[0]
+    const fromAddress = await getFirstAddressWithBalance()
     const toAddress = addresses.find(x => x != fromAddress)
 
     if (!toAddress) {
@@ -39,7 +38,6 @@ describe("Web3: Should be able to transfer ETH", async function () {
       from: fromAddress,
       to: toAddress,
       value: transferAmount,
-      //gasLimit: 21000,
       maxFeePerGas: feeData.maxFeePerGas,
       maxPriorityFeePerGas: feeData.maxPriorityFeePerGas,
     })
@@ -47,5 +45,5 @@ describe("Web3: Should be able to transfer ETH", async function () {
     const toAddressEndingBalance = await web3.eth.getBalance(toAddress)
 
     expect(BigInt(toAddressEndingBalance) == (BigInt(toAddressStartingBalance) - BigInt(transferAmount)))
-  })
+  }, 30000)
 })

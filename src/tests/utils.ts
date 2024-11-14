@@ -5,32 +5,51 @@ import { BuildervaultWeb3Provider } from ".."
 import Web3 from "web3";
 
 export function getBuildervaultProviderForTesting(extraConfiguration?: any) {
-  if (!process.env.BLOCKDAEMON_RPC_URL ||
-    !process.env.BUILDERVAULT_PLAYER0_URL ||
-    !process.env.BUILDERVAULT_PLAYER0_APIKEY ||
-    !process.env.BUILDERVAULT_PLAYER1_URL ||
-    !process.env.BUILDERVAULT_PLAYER1_APIKEY ||
-    !process.env.BUILDERVAULT_MASTERKEY_ID) {
-    throw new Error("Environment variables BLOCKDAEMON_RPC_URL, BUILDERVAULT_PLAYER0_URL, BUILDERVAULT_PLAYER0_APIKEY must be set")
-  }
 
-  const providerConfig = {
+  let providerConfig: { [key: string]: string } = {
     rpcUrl: process.env.BLOCKDAEMON_RPC_URL,
-    player0Url: process.env.BUILDERVAULT_PLAYER0_URL,
-    player0ApiKey: process.env.BUILDERVAULT_PLAYER0_APIKEY,
-    player1Url: process.env.BUILDERVAULT_PLAYER1_URL,
-    player1ApiKey: process.env.BUILDERVAULT_PLAYER1_APIKEY,
+    playerCount: process.env.BUILDERVAULT_PLAYER_COUNT,
     masterKeyId: process.env.BUILDERVAULT_MASTERKEY_ID,
     accountId: process.env.BUILDERVAULT_ACCOUNT_ID,
     addressIndex: process.env.BUILDERVAULT_ADDRESS_INDEX,
     logRequestsAndResponses: true,  // Verbose logging
     ...extraConfiguration
-  };
+  }; 
 
+  // Todo: dynamically determine number of players and loop through
+  if (process.env.BUILDERVAULT_PLAYER_COUNT){
 
-  const provider = new BuildervaultWeb3Provider(providerConfig)
+    for (let i = 0; i < Number(process.env.BUILDERVAULT_PLAYER_COUNT); i++) {
 
-  return provider
+      if (!process.env[`BUILDERVAULT_PLAYER${i}_URL`]){
+        throw new Error(`BUILDERVAULT_PLAYER${i}_URL is required`)
+      } else {
+        providerConfig[`player${i}Url`] = process.env[`BUILDERVAULT_PLAYER${i}_URL`] as string
+
+        if (process.env[`BUILDERVAULT_PLAYER${i}_MPCPUBLICKEY`]){
+          providerConfig[`player${i}MPCpublicKey`] = process.env[`BUILDERVAULT_PLAYER${i}_MPCPUBLICKEY`] as string
+        };  
+
+        if (process.env[`BUILDERVAULT_PLAYER${i}_APIKEY`]){
+          providerConfig[`player${i}ApiKey`] = process.env[`BUILDERVAULT_PLAYER${i}_APIKEY`] as string
+        };  
+        
+        if (process.env[`BUILDERVAULT_PLAYER${i}_MTLSPUBLICKEY`]){
+          providerConfig[`player${i}mTLSpublicKey`] = process.env[`BUILDERVAULT_PLAYER${i}_MTLSPUBLICKEY`] as string
+        }
+        if (process.env[`BUILDERVAULT_PLAYER${i}_CLIENT_CERT`]){
+          providerConfig[`player${i}ClientCert`] = process.env[`BUILDERVAULT_PLAYER${i}_CLIENT_CERT`] as string
+          providerConfig[`player${i}ClientKey`] = process.env[`BUILDERVAULT_PLAYER${i}_CLIENT_KEY`] as string
+        }
+      }
+    }
+
+    return new BuildervaultWeb3Provider(providerConfig)
+    
+  } else {
+    throw new Error(`BUILDERVAULT_PLAYER_COUNT is required`)
+  }
+
 }
 
 export function getEthersBuildervaultProviderForTesting(extraConfiguration?: any) {

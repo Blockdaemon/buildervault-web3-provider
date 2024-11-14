@@ -83,6 +83,7 @@ describe("Web3: Should be able to sign using BuilderVault", () => {
     // @ts-ignore
     delete types.EIP712Domain
     const recoveredAddress = ethers.utils.verifyTypedData(domain, types, message, signature as any);
+    console.log(signature)
 
     expect(recoveredAddress).to.be.equals(signerAddress)
   })

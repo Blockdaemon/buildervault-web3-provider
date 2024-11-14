@@ -6,15 +6,30 @@ export type BuildervaultProviderConfig = {
    */
   rpcUrl?: string,
   /** 
-   * Set the URL of the BuilderVault player0 and player1 endpoints
+   * Set the numnber of the BuilderVault players
+   */
+  playerCount?: number
+  /** 
+   * Set the URL of each BuilderVault player endpoint
    */
   player0Url?: string,
   player1Url?: string,
-  /** 
-   * Set the BuilderVault TSM API keys
+  player2Url?: string,
+  /**
+   * Set the BuilderVault TSM API keys or use Client Certificate authentication
    */
   player0ApiKey?: string,
   player1ApiKey?: string,
+  player2ApiKey?: string,
+  /** 
+   * Set the BuilderVault TSM mTLS Client Authentication Certficate key pair or use API Key authentication
+   */
+  player0ClientCert?: string,
+  player0ClientKey?: string,
+  player1ClientCert?: string,
+  player1ClientKey?: string,
+  player2ClientCert?: string,
+  player2ClientKey?: string,
   /** 
    * BuilderVault Master Key ID. This ID represents all the private Master Key shares and must be generated outside if the web3 provider using the BuilderVault SDK
    */
@@ -32,6 +47,19 @@ export type BuildervaultProviderConfig = {
   addressIndex?: number,
 
   // ------------- Optional fields --------------
+  /** 
+   * Set the MPC publickey of each BuilderVault player. This is required for Dynamic communication between nodes such as through a broker and not static communication
+   */
+  player0MPCpublicKey?: string,
+  player1MPCpublicKey?: string,
+  player2MPCpublicKey?: string,
+  /**
+  /** 
+   * Set the TLS publickey of each BuilderVault player endpoint. This is used for mTLS server certificate pinning.
+   */
+  player0mTLSpublicKey?: string,
+  player1mTLSpublicKey?: string,
+  player2mTLSpublicKey?: string,
   /**
    * Default: false
    * By setting to true, every request and response processed by the provider will be logged to the console
@@ -43,7 +71,7 @@ export type BuildervaultProviderConfig = {
 export type EthereumSignature = {
   r: string,
   s: string,
-  v: BigInt,
+  v: number,
 };
 
 export interface AccountAddresses {

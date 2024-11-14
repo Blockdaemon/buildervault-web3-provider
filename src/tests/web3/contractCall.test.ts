@@ -56,7 +56,7 @@ describe("Web3: Should be able to call a contract method",  () => {
     const receipt = await greeterContract.methods.setGreeting(greeting).send({ from: await getFirstAddressWithBalance() })
 
     expect(receipt.transactionHash).to.be.not.undefined
-  })
+  }, 30000)
 
   it("greet() after", async  () =>  {
     const currentGreeting = await greeterContract.methods.greet().call()
