@@ -73,4 +73,66 @@ export class API_Utils {
      * @return {Promise<Uint8Array>}
      */
     unwrap(pkcs8PrivateKey: Uint8Array, wrappedValue: Uint8Array): Promise<Uint8Array>;
+    /**
+     * Secret share an RSA private key
+     * @param {Number} threshold
+     * @param {Uint32Array} players
+     * @param {Uint8Array} privateKey
+     * @return {Promise<Map>} map of shares, with player index as key
+     */
+    rsaSecretShare(threshold: number, players: Uint32Array, privateKey: Uint8Array): Promise<Map<any, any>>;
+    /**
+     * Recombine an RSA private key
+     * @param {Object} shares map of shares, with player index as key
+     * @return {Promise<Uint8Array>}
+     */
+    rsaRecombine(shares: any): Promise<Uint8Array>;
+    /**
+     * Secret share an AES private key
+     * @param {Uint32Array} players
+     * @param {Uint8Array} aesKey
+     * @return {Promise<{sharesMap: Map, checksum: Uint8Array}>} map of shares, with player index as key
+     */
+    aesSecretShare(players: Uint32Array, aesKey: Uint8Array): Promise<{
+        sharesMap: Map<any, any>;
+        checksum: Uint8Array;
+    }>;
+    /**
+     * Recombine an AES private key
+     * @param {Object} shares map of shares, with player index as key
+     * @param {Uint8Array} checksum
+     * @return {Promise<Uint8Array>}
+     */
+    aesRecombine(shares: any, checksum: Uint8Array): Promise<Uint8Array>;
+    /**
+     * Secret share an HMAC private key
+     * @param {Uint32Array} players
+     * @param {Uint8Array} hmacKey
+     * @return {Promise<{sharesMap: Map, checksum: Uint8Array}>} map of shares, with player index as key
+     */
+    hmacSecretShare(players: Uint32Array, hmacKey: Uint8Array): Promise<{
+        sharesMap: Map<any, any>;
+        checksum: Uint8Array;
+    }>;
+    /**
+     * Recombine an HMAC private key
+     * @param {Object} shares map of shares, with player index as key
+     * @param {Uint8Array} checksum
+     * @return {Promise<Uint8Array>}
+     */
+    hmacRecombine(shares: any, checksum: Uint8Array): Promise<Uint8Array>;
+    /**
+     * Wrap a value using public key
+     * @param {Uint8Array} spkiPublicKey
+     * @param {Uint8Array} value
+     * @return {Promise<Uint8Array>}
+     */
+    envelopWrap(spkiPublicKey: Uint8Array, value: Uint8Array): Promise<Uint8Array>;
+    /**
+     * Unwrap a wrapped value using private key
+     * @param {Uint8Array} pkcs8PrivateKey
+     * @param {Uint8Array} wrappedValue
+     * @return {Promise<Uint8Array>}
+     */
+    envelopeUnwrap(pkcs8PrivateKey: Uint8Array, wrappedValue: Uint8Array): Promise<Uint8Array>;
 }

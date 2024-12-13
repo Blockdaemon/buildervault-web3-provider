@@ -1,4 +1,4 @@
-    export class API_ECDSA {
+export class API_ECDSA {
     /**
      * Create a new ECDSA instance, used internally
      * @param {TSMClient} tsmClient
@@ -24,15 +24,6 @@
      */
     generatePresignatures(sessionConfig: SessionConfig, keyID: string, presignatureCount: number): Promise<string[]>;
     /**
-     * Sign a message
-     * @param {SessionConfig} sessionConfig
-     * @param {string} keyID
-     * @param {Uint32Array} derivationPath
-     * @param {Uint8Array} message
-     * @return {Promise<Uint8Array>}
-     */
-    sign(sessionConfig: SessionConfig, keyID: string, derivationPath: Uint32Array, message: Uint8Array): Promise<Uint8Array>;
-    /**
      * Use an existing presignature to create a partial signature
      * @param {string} keyID
      * @param {string} presignatureID
@@ -44,6 +35,15 @@
         "partialSignature": Uint8Array;
         "presignatureID": string;
     }>;
+    /**
+     * Create a partial signature
+     * @param {SessionConfig} sessionConfig
+     * @param {string} keyID
+     * @param {Uint32Array} derivationPath
+     * @param {Uint8Array} message
+     * @return {Promise<Uint8Array>}
+     */
+    sign(sessionConfig: SessionConfig, keyID: string, derivationPath: Uint32Array, message: Uint8Array): Promise<Uint8Array>;
     /**
      * Generate partial recovery data used to recover private key in case of emergency
      * @param {SessionConfig} sessionConfig

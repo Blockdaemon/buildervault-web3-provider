@@ -32,6 +32,29 @@ export class SessionConfig {
 export class Configuration {
     constructor(url: any);
     /**
+     * Specifies a file containing PEM certificates of the trusted root CAs used to validate the TSM node's certificate.
+     * If not set, the system certificate store is used.
+     * @param {string} rootCAFile
+     * @return {Promise<>}
+     */
+    withRootCAFile(rootCAFile: string): Promise<any>;
+    /**
+     * Sets the expected MPC node public key in PKIX, ASN.1 DER form. If the TSM node presents a different
+     * public key, the connection will fail. Setting this will disable OCSP validation and all other certificate checks.
+     * @param {Uint8Array} serverPKIXPublicKey
+     * @return {Promise<>}
+     */
+    withPublicKeyPinning(serverPKIXPublicKey: Uint8Array): Promise<any>;
+    /**
+     * Enables OCSP validation of the node certificate.
+     * @param {boolean} requireStapling
+     * @param {boolean} validateLeafOnly
+     * @param {string} cacheTTL
+     * @param {string} responderURL
+     * @return {Promise<>}
+     */
+    withOCSPValidation(requireStapling: boolean, validateLeafOnly: boolean, cacheTTL: string, responderURL: string): Promise<any>;
+    /**
      * Authenticate using API Key
      * @param {string} apiKey
      * @return {Promise<>}
@@ -41,10 +64,13 @@ export class Configuration {
      * Authenticate using mTLS
      * @param {string} clientKeyPath
      * @param {string} clientCertPath
-     * @param {Uint8Array} serverPKIXPublicKey
+     * @param {boolean} ocspStaple
+     * @param {string} rootCAFile
+     * @param {string} cacheTTL
+     * @param {string} responderURL
      * @return {Promise<>}
      */
-    withMTLSAuthentication(clientKeyPath: string, clientCertPath: string, serverPKIXPublicKey: Uint8Array): Promise<any>;
+    withMTLSAuthentication(clientKeyPath: string, clientCertPath: string, ocspStaple: boolean, rootCAFile: string, cacheTTL: string, responderURL: string): Promise<any>;
     /**
      * Authenticate using OIDC Access Token
      * @param {string} accessToken
@@ -83,6 +109,29 @@ export class TSMClient {
         nodeCommunication: string;
         nodeConfiguration: string;
     }>;
+    AES(): {
+        clientHandle: any;
+        sdkv2: any;
+        generateKey(sessionConfig: SessionConfig, threshold: number, keyLength: number, desiredKeyID?: string): Promise<string>;
+        exportKeyShare(sessionConfig: SessionConfig, keyID: string, wrappingKey: Uint8Array): Promise<{
+            "wrappedKeyShare": Uint8Array;
+            "checksum": Uint8Array;
+        }>;
+        importKeyShare(sessionConfig: SessionConfig, threshold: number, wrappedKeyShare: Uint8Array, checksum: Uint8Array, desiredKeyID: string): Promise<string>;
+        ctrKeyStream(sessionConfig: SessionConfig, keyID: string, iv: Uint8Array, keyStreamLength: number): Promise<Uint8Array>;
+        cbcEncrypt(sessionConfig: SessionConfig, keyID: string, iv: Uint8Array, plaintext: Uint8Array): Promise<Uint8Array>;
+        cbcDecrypt(sessionConfig: SessionConfig, keyID: string, iv: Uint8Array, ciphertext: Uint8Array): Promise<Uint8Array>;
+        gcmEncrypt(sessionConfig: SessionConfig, keyID: string, iv: Uint8Array, plaintext: Uint8Array, additionalData: Uint8Array): Promise<Uint8Array>;
+        gcmDecrypt(sessionConfig: SessionConfig, keyID: string, iv: Uint8Array, ciphertext: Uint8Array, additionalData: Uint8Array, tag: Uint8Array): Promise<Uint8Array>;
+        finalizeCTR(partialResults: Uint8Array[]): Promise<Uint8Array>;
+        finalizeCBCEncrypt(partialResults: Uint8Array[]): Promise<Uint8Array>;
+        finalizeCBCDecrypt(partialResults: Uint8Array[]): Promise<Uint8Array>;
+        finalizeGCMEncrypt(partialResults: Uint8Array[]): Promise<{
+            ciphertext: Uint8Array;
+            authTag: Uint8Array;
+        }>;
+        finalizeGCMDecrypt(partialResults: Uint8Array[]): Promise<Uint8Array>;
+    };
     Broadcast(): {
         clientHandle: any;
         sdkv2: any;
@@ -94,11 +143,11 @@ export class TSMClient {
         sdkv2: any;
         generateKey(sessionConfig: SessionConfig, threshold: number, curveName: string, desiredKeyID?: string): Promise<string>;
         generatePresignatures(sessionConfig: SessionConfig, keyID: string, presignatureCount: number): Promise<string[]>;
-        sign(sessionConfig: SessionConfig, keyID: string, derivationPath: Uint32Array, message: Uint8Array): Promise<Uint8Array>;
         signWithPresignature(keyID: string, presignatureID: string, derivationPath: Uint32Array, message: Uint8Array): Promise<{
             "partialSignature": Uint8Array;
             "presignatureID": string;
         }>;
+        sign(sessionConfig: SessionConfig, keyID: string, derivationPath: Uint32Array, message: Uint8Array): Promise<Uint8Array>;
         generateRecoveryData(sessionConfig: SessionConfig, keyID: string, ersPublicKey: Uint8Array, ersLabel: Uint8Array): Promise<Uint8Array>;
         publicKey(keyID: string, derivationPath?: Uint32Array): Promise<Uint8Array>;
         chainCode(keyID: string, derivationPath?: Uint32Array): Promise<Uint8Array>;
@@ -140,6 +189,19 @@ export class TSMClient {
             "chainCode": Uint8Array;
         }>;
     };
+    HMAC(): {
+        clientHandle: any;
+        sdkv2: any;
+        generateKey(sessionConfig: SessionConfig, threshold: number, keyLength: number, desiredKeyID?: string): Promise<string>;
+        exportKeyShare(sessionConfig: SessionConfig, keyID: string, wrappingKey: Uint8Array): Promise<{
+            "wrappedKeyShare": Uint8Array;
+            "checksum": Uint8Array;
+        }>;
+        importKeyShare(sessionConfig: SessionConfig, threshold: number, wrappedKeyShare: Uint8Array, checksum: Uint8Array, desiredKeyID: string): Promise<string>;
+        hmacSHA256(sessionConfig: SessionConfig, keyID: string, data: Uint8Array): Promise<Uint8Array>;
+        hmacSHA512(sessionConfig: SessionConfig, keyID: string, data: Uint8Array): Promise<Uint8Array>;
+        finalizeHMAC(partialResults: Uint8Array[]): Promise<Uint8Array>;
+    };
     KeyManagement(): {
         clientHandle: any;
         sdkv2: any;
@@ -147,16 +209,39 @@ export class TSMClient {
         deleteKeyShare(keyID: string): Promise<string>;
         deletePresignatures(keyID: string): Promise<string>;
     };
+    RSA(): {
+        HashFunctionNone: string;
+        HashFunctionSHA1: string;
+        HashFunctionSHA256: string;
+        clientHandle: any;
+        sdkv2: any;
+        exportKeyShare(sessionConfig: SessionConfig, keyID: string, wrappingKey: Uint8Array): Promise<{
+            "wrappedKeyShare": Uint8Array;
+            "pkixPublicKey": Uint8Array;
+        }>;
+        importKeyShare(sessionConfig: SessionConfig, wrappedKeyShare: Uint8Array, desiredKeyID: string): Promise<string>;
+        publicKey(keyID: string): Promise<Uint8Array>;
+        signPKCS1v15(keyID: string, hashFunction: string, hashed: Uint8Array): Promise<Uint8Array>;
+        signPSS(sessionConfig: SessionConfig, keyID: string, hashFunction: string, digest: Uint8Array): Promise<Uint8Array>;
+        decrypt(keyID: string, ciphertext: Uint8Array): Promise<Uint8Array>;
+        finalizeSignPKCS1v15(hashFunction: string, hashed: Uint8Array, partialSignatures: Uint8Array[]): Promise<Uint8Array>;
+        finalizeSignPSS(hashFunction: string, digest: Uint8Array, partialSignatures: Uint8Array[]): Promise<Uint8Array>;
+        finalizeDecryptPKCS1v15(partialDecryptions: Uint8Array[]): Promise<Uint8Array>;
+        finalizeDecryptOAEP(hashFunction: string, label: Uint8Array, partialDecryptions: Uint8Array[]): Promise<Uint8Array>;
+        finalizeDecryptRaw(partialDecryptions: Uint8Array[]): Promise<Uint8Array>;
+        verifySignaturePKCS1v15(pkixPublicKey: Uint8Array, hashFunction: string, hashed: Uint8Array, signature: Uint8Array): Promise<string>;
+        verifySignaturePSS(pkixPublicKey: Uint8Array, hashFunction: string, digest: Uint8Array, signature: Uint8Array): Promise<string>;
+    };
     Schnorr(): {
         clientHandle: any;
         sdkv2: any;
         generateKey(sessionConfig: SessionConfig, threshold: number, curveName: string, desiredKeyID?: string): Promise<string>;
         generatePresignatures(sessionConfig: SessionConfig, keyID: string, presignatureCount: number): Promise<string[]>;
-        sign(sessionConfig: SessionConfig, keyID: string, derivationPath: Uint32Array, message: Uint8Array): Promise<Uint8Array>;
         signWithPresignature(keyID: string, presignatureID: string, derivationPath: Uint32Array, message: Uint8Array): Promise<{
             "partialSignature": Uint8Array;
             "presignatureID": string;
         }>;
+        sign(sessionConfig: SessionConfig, keyID: string, derivationPath: Uint32Array, message: Uint8Array): Promise<Uint8Array>;
         generateRecoveryData(sessionConfig: SessionConfig, keyID: string, ersPublicKey: Uint8Array, ersLabel: Uint8Array): Promise<Uint8Array>;
         publicKey(keyID: string, derivationPath?: Uint32Array): Promise<Uint8Array>;
         chainCode(keyID: string, derivationPath?: Uint32Array): Promise<Uint8Array>;
@@ -194,10 +279,24 @@ export class TSMClient {
         pkixPublicKeyToCompressedPoint(spkiPublicKey: Uint8Array): Promise<Uint8Array>;
         ecPointToPKIXPublicKey(curveName: string, ecPoint: Uint8Array): Promise<Uint8Array>;
         privateKeyToPKIXPublicKey(privateKey: Uint8Array, curveName: string): Promise<Uint8Array>;
-        shamirRecombine(threshold: number, shares: Map<any, any>, curveName: string): Promise<Uint8Array>;
+        shamirRecombine(threshold: int, shares: Map<any, any>, curveName: string): Promise<Uint8Array>;
         shamirSecretShare(threshold: number, players: Uint32Array, curveName: string, value: Uint8Array): Promise<Map<any, any>>;
         wrap(spkiPublicKey: Uint8Array, value: Uint8Array): Promise<Uint8Array>;
         unwrap(pkcs8PrivateKey: Uint8Array, wrappedValue: Uint8Array): Promise<Uint8Array>;
+        rsaSecretShare(threshold: number, players: Uint32Array, privateKey: Uint8Array): Promise<Map<any, any>>;
+        rsaRecombine(shares: any): Promise<Uint8Array>;
+        aesSecretShare(players: Uint32Array, aesKey: Uint8Array): Promise<{
+            sharesMap: Map<any, any>;
+            checksum: Uint8Array;
+        }>;
+        aesRecombine(shares: any, checksum: Uint8Array): Promise<Uint8Array>;
+        hmacSecretShare(players: Uint32Array, hmacKey: Uint8Array): Promise<{
+            sharesMap: Map<any, any>;
+            checksum: Uint8Array;
+        }>;
+        hmacRecombine(shares: any, checksum: Uint8Array): Promise<Uint8Array>;
+        envelopWrap(spkiPublicKey: Uint8Array, value: Uint8Array): Promise<Uint8Array>;
+        envelopeUnwrap(pkcs8PrivateKey: Uint8Array, wrappedValue: Uint8Array): Promise<Uint8Array>;
     };
     WrappingKey(): {
         clientHandle: any;

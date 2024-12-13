@@ -1,6 +1,6 @@
 {
   "name": "@blockdaemon/buildervault-web3-provider",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "EIP-1193 Compatible Ethereum provider for BuilderVault",
   "repository": {
     "type": "git",
@@ -35,7 +35,7 @@
     "web3": "^4.1.2"
   },
   "dependencies": {
-    "@sepior/tsmsdkv2": "^65.0.0",
+    "@sepior/tsmsdkv2": "^68.0.0",
     "asn1.js": "^5.4.1",
     "crypto": "^1.0.1",
     "debug": "^4.3.7",

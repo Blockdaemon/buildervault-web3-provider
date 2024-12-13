@@ -67,10 +67,13 @@ export class BuildervaultWeb3Provider extends HttpProvider {
             await playerConfig.withAPIKeyAuthentication((this.config as { [key: string]: any })[playerApiKeyConfigKey]);
           } else if (playerClientCertConfigKey in this.config && playerClientKeyConfigKey in this.config && playerMTLSpublicKeyConfigKey in this.config) {
             const cert = new crypto.X509Certificate((this.config as { [key: string]: any })[playerMTLSpublicKeyConfigKey]);
+
+            await playerConfig.withPublicKeyPinning(cert.publicKey.export({type: "spki",format: "der"}));
+
             await playerConfig.withMTLSAuthentication(
               (this.config as { [key: string]: any })[playerClientKeyConfigKey],
               (this.config as { [key: string]: any })[playerClientCertConfigKey],
-              cert.publicKey.export({ type: "spki", format: "der" })
+              false, "", "", ""
             );
           } else {
             throw new Error(`player${i} authentication credentials are required`);
