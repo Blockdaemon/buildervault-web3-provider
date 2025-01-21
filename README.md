@@ -10,6 +10,23 @@ npm config set //npm.pkg.github.com/:_authToken=YOUR_GITHUB_PAT
 npm install @blockdaemon/buildervault-web3-provider
 ```
 
+## Usage with viem.sh
+```sh
+npm install viem
+```
+```js
+import { createWalletClient, custom } from 'viem'
+
+const walletClient = createWalletClient({ 
+  transport: custom({
+    async request({ method, params }) {
+      const response = await eip1193Provider.request({method, params})
+      return response
+    }
+  })
+})
+```
+
 ## Usage with ethers.js
 ```sh
 npm install ethers@6
@@ -32,23 +49,6 @@ import Web3 from "web3";
 const web3 = new Web3(eip1193Provider);
 ```
 
-## Usage with viem.sh
-```sh
-npm install viem
-```
-```js
-import { createWalletClient, custom } from 'viem'
-
-const walletClient = createWalletClient({ 
-  transport: custom({
-    async request({ method, params }) {
-      const response = await eip1193Provider.request({method, params})
-      return response
-    }
-  })
-})
-```
-
 
 ## API Documentation
 
@@ -57,10 +57,6 @@ const walletClient = createWalletClient({
 ```ts
 export type BuildervaultProviderConfig = {
   // ------------- Mandatory fields -------------
-  /** 
-   * Set the RPC API URL endpoint for JSON-RPC over HTTP access to the blockchain data
-   */
-  rpcUrl?: string,
   /** 
    * Set the numnber of the BuilderVault players
    */
@@ -116,64 +112,61 @@ export type BuildervaultProviderConfig = {
   player0mTLSpublicKey?: string,
   player1mTLSpublicKey?: string,
   player2mTLSpublicKey?: string,
-  /**
-   * Default: false
-   * By setting to true, every request and response processed by the provider will be logged to the console
-   * Same as setting env var `DEBUG=buildervault-web3-provider:req_res`
+  /** 
+   * Set the list of Ethereum chains to be used with this provider (type AddEthereumChainParameter[] compatible with EIP-3085)
    */
-  logRequestsAndResponses?: boolean,
+  chains: [
+    {
+      chainId: "0x1",
+      rpcUrls: ["https://svc.blockdaemon.com/native/v1/ethereum/mainnet?apiKey=zpka_853...b25"] as const,
+      chainName: "Ethereum Mainnet",
+      nativeCurrency: {
+        name: "Ether",
+        symbol: "ETH",
+        decimals: 18,
+      },
+    },
+  ]
 }
 ```
 
-### Web3.js full client example
+### Viem full client example
 ```ts
-import { BuildervaultWeb3Provider } from "@blockdaemon/buildervault-web3-provider";
-import Web3 from "web3";
+import { createEIP1193Provider } from "@blockdaemon/buildervault-web3-provider";
+import { createWalletClient, custom } from 'viem';
+import { holesky } from 'viem/chains';
 
-const eip1193Provider = new BuildervaultWeb3Provider({
-  rpcUrl: "https://svc.blockdaemon.com/native/v1/ethereum/holesky?apiKey=zpka_...",
-  player0Url: "http://localhost:8500",
-  player0ApiKey: "apikey...",
-  player1Url: "http://localhost:8501",
-  player1ApiKey: "apikey...",
-  masterKeyId: "Ap3...",
-  accountId: 0,   // account of BIP44 m/44/60/account/0/address_index
-  addressIndex: 0, // address_index of BIP44 m/44/60/account/0/address_index
-  logRequestsAndResponses: false,  // Verbose logging
-})
+const chain = {
+  chainName: "Ethereum Holesky",
+  chainId: "0x4268",
+  rpcUrls: ["https://svc.blockdaemon.com/native/v1/ethereum/holesky?apiKey=zpka_853...b25"],
+};
 
 async function main() {
 
-  const web3 = new Web3(eip1193Provider);
+  const eip1193Provider = await createEIP1193Provider({
+      chains: [chain],
+      playerCount: 2,
+      player0Url: "http://localhost:8500",
+      player0ApiKey: "apikey0",
+      player1Url: "http://localhost:8501",
+      player1ApiKey: "apikey1",
+      masterKeyId: "Ap7fC2YPwBKbRXwVHEBVUkHYF37G",
+      accountId: 0,   // account of BIP44 m/44/60/account/0/address_index
+      addressIndex: 0, // address_index of BIP44 m/44/60/account/0/address_index
+  });
 
-  const chainId = await web3.eth.getChainId();
-  console.log(`ChainID:`, chainId);
+  const walletClient = createWalletClient({ 
+    chain: holesky,
+    transport: custom({
+      async request({ method, params }) {
+        const response = await eip1193Provider.request({method, params})
+        return response
+      }
+    })
+  });
 
-  const accounts = await web3.eth.getAccounts();
-  console.log(`Wallet addresses:`, accounts);
-
-  console.log(`Initial balance for address_index 0:`, await web3.eth.getBalance(accounts[0]));
-
-  const feeData = await web3.eth.calculateFeeData();
-
-  // Construct the transaction
-  const transaction = {
-    chainId: chainId,
-    from: accounts[0],
-    to: '0x11f4d0A3c12e86B4b5F39B213F7E19D048276DAe',
-    value: '1000000000000',
-    maxFeePerGas: feeData.maxFeePerGas,
-    maxPriorityFeePerGas: feeData.maxPriorityFeePerGas,
-  }
-
-  // Sign the transaction with BuilderVault, broadcast and wait for the receipt
-  const receipt = await web3.eth.sendTransaction(transaction);
-
-  // Log the transaction receipt
-  console.log('Transaction receipt:', receipt);
-
-  // Log final balances after the transaction has been mined
-  console.log(`Final balance for address_index 0:`, await web3.eth.getBalance(accounts[0]));
+  walletClient.requestAddresses().then(console.log);
 
 }
 
