@@ -1,36 +1,88 @@
-name: Build and Publish NPM Package
+name: Test, Build and Publish NPM Package
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
-    tags: ["v*.*.*"]
 
 jobs:
-  build:
+
+  test:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+    env:
+      BUILDERVAULT_PLAYER_COUNT: 2
+      BUILDERVAULT_PLAYER0_URL: "http://localhost:8500"
+      BUILDERVAULT_PLAYER0_APIKEY: "apikey0"
+      BUILDERVAULT_PLAYER1_URL: "http://localhost:8501"
+      BUILDERVAULT_PLAYER1_APIKEY: "apikey1"
+      BUILDERVAULT_ACCOUNT_ID: 0
+      BUILDERVAULT_ADDRESS_INDEX: 0
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v2
         with:
-          node-version: '22'
+          node-version: '23'
+
+      - name: Download BuilderVault TSM Demo repo
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+        run: git clone "https://:${{ secrets.GITLAB_TOKEN }}@gitlab.com/Blockdaemon/tsm-demo.git" tsm-demo
+
+      - name: Log into Nexus registry
+        env:
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_TOKEN: ${{ secrets.NEXUS_TOKEN }}
+        run: echo "${{ secrets.NEXUS_TOKEN }}" | docker login nexus.sepior.net:19001 -u "${{ secrets.NEXUS_USERNAME }}" --password-stdin
+
+      - name: Run BuilderVault TSM Demo
+        working-directory: ./tsm-demo/tsm
+        run: docker compose up --quiet-pull -d
+
+      - name: Generate BuilderVault MasterKey
+        working-directory: ./tsm-demo/sdk/nodejs/
+        run: |
+          npm config set @sepior:registry=https://gitlab.com/api/v4/projects/56306653/packages/npm/  
+          npm install @sepior/tsmsdkv2 ethers asn1.js node-fs
+          npx ts-node crypto_ethereum.js
+          echo BUILDERVAULT_MASTERKEY_ID=$(cat key.txt) >> "$GITHUB_ENV"
+
+      - name: Install Foundry Tools
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Run Foundry Anvil
+        run: anvil &
+
+      - name: Install Buildervault Web3 Provider dependencies
+        run: npm install
+
+      - name: Run Buildervault Web3 Provider tests
+        run: npm test
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[skip ci]')
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '23'
           registry-url: https://npm.pkg.github.com/
 
       - name: Install dependencies
         run: npm install
-
-      - name: Add @sepior/tsmsdkv2 Typescript Definitions 
-        run: cp ./types/* ./node_modules/@sepior/tsmsdkv2/
-
-      - name: Run Tests
-        run: npm test
-        continue-on-error: true   # ToDo: remove once integration with hosted BV sandbox is in place.
 
       - name: Build TypeScript application
         run: npm run build
@@ -38,4 +90,12 @@ jobs:
       - name: Publish to GitHub npm package registry
         env:
           NODE_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
-        run: npm publish
+        run: |
+          NEW_VERSION=$(npm version patch --no-git-tag-version)
+          echo "export const VERSION = \"@blockdaemon/buildervault-web3-provider@${NEW_VERSION}\";" > src/version.ts
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json src/version.ts
+          git commit -m "chore(release SDK): $NEW_VERSION [skip ci]"
+          git push origin HEAD:main
+          npm publish
