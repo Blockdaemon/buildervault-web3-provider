@@ -181,6 +181,17 @@ export const createEIP1193Provider = async (
     }
   }
 
+  // Get wallet account addresses
+  let walletAccounts = await getWalletAccounts(
+    TSMClients,
+    masterKeyId,
+    accountId,
+    //createError
+  );
+  Object.values(walletAccounts[accountId]).map((address) => {
+    accountsAddresses.add(address as Address)
+  });
+
   const request: BuildervaultWeb3Provider["request"] = async ({
     method,
     params,
@@ -198,20 +209,6 @@ export const createEIP1193Provider = async (
          * @returns {Promise<Address[]>} An array of addresses after user authorization.
          */
         case "eth_requestAccounts": {
-
-
-          // Note: In the future we should add a way for developers to surface a UI
-          // for user to select their accounts. For now it just returns all accounts
-          // for the provided accountId
-          let walletAccounts = await getWalletAccounts(
-            TSMClients,
-            masterKeyId,
-            accountId,
-            //createError
-          );
-          Object.values(walletAccounts[accountId]).map((address) => {
-            accountsAddresses.add(address as Address)
-          });
           setConnected(true, { chainId: activeChain.chainId });
           return [...accountsAddresses];
         }
@@ -227,7 +224,15 @@ export const createEIP1193Provider = async (
         case "personal_sign": {
           const [message, signWith] =
             params as WalletRpcSchema[10]["Parameters"];
-          // TODO - map addressIndex to signWith address
+          
+          // Map signWith address to addressIndex
+          if (!signWith) {
+            throw new Error("signWith is required");
+          } else if (!accountsAddresses.has(signWith)) {
+            throw new Error("signWith is not a valid address");
+          } else {
+            addressIndex = [...accountsAddresses].indexOf(signWith);
+          }
           const signedMessage = await signMessage(
             TSMClients,
             masterKeyId,
@@ -243,7 +248,14 @@ export const createEIP1193Provider = async (
           const [signWith, message] =
             params as WalletRpcSchema[6]["Parameters"];
 
-          // TODO - map addressIndex to signWith address
+          // Map signWith address to addressIndex
+          if (!signWith) {
+            throw new Error("signWith is required");
+          } else if (!accountsAddresses.has(signWith)) {
+            throw new Error("signWith is not a valid address");
+          } else {
+            addressIndex = [...accountsAddresses].indexOf(signWith);
+          }
           const signedMessage = await signMessage(
             TSMClients,
             masterKeyId,
@@ -260,7 +272,15 @@ export const createEIP1193Provider = async (
             Address,
             TypedDataDefinition
           ];
-          // TODO - map addressIndex to signWith address
+
+          // Map signWith address to addressIndex
+          if (!signWith) {
+            throw new Error("signWith is required");
+          } else if (!accountsAddresses.has(signWith)) {
+            throw new Error("signWith is not a valid address");
+          } else {
+            addressIndex = [...accountsAddresses].indexOf(signWith);
+          }
           const message = hashTypedData(typedData);
           const signedMessage = await signMessage(
             TSMClients,
@@ -275,6 +295,16 @@ export const createEIP1193Provider = async (
         }
         case "eth_signTransaction": {
           const [transaction] = params as WalletRpcSchema[7]["Parameters"];
+
+          // Map from address to addressIndex
+          if (!transaction.from) {
+            throw new Error("from is required");
+          } else if (!accountsAddresses.has(transaction.from)) {
+            throw new Error("from is not a valid address");
+          } else {
+            addressIndex = [...accountsAddresses].indexOf(transaction.from);
+          }
+
           const processedTransaction = preprocessTransaction({ ...transaction });
 
           const serializedUnsignedTransaction = serializeTransaction({
@@ -347,6 +377,15 @@ export const createEIP1193Provider = async (
 
         case "eth_sendTransaction": {
           const [transaction] = params as WalletRpcSchema[7]["Parameters"];
+
+          // Map from address to addressIndex
+          if (!transaction.from) {
+            throw new Error("from is required");
+          } else if (!accountsAddresses.has(transaction.from)) {
+            throw new Error("from is not a valid address");
+          } else {
+            addressIndex = [...accountsAddresses].indexOf(transaction.from);
+          }
 
           const signedTransaction = await request({
             method: "eth_signTransaction",

@@ -92,6 +92,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
         run: |
           NEW_VERSION=$(npm version patch --no-git-tag-version)
+          NEW_VERSION=${NEW_VERSION:1}  # strip the "v" prefix from NEW_VERSION
           echo "export const VERSION = \"@blockdaemon/buildervault-web3-provider@${NEW_VERSION}\";" > src/version.ts
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

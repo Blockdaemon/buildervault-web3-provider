@@ -72,8 +72,8 @@ export async function getWalletAccounts(
   let walletAccounts: AccountAddresses = {};
   walletAccounts[accountId] = [];
   
-  // ToDo: include addressIndex in loop when outside 0-5
-  for (let i = 0; i < 5; i++) {
+  // ToDo: include ENV addressIndex in loop when outside 0-9
+  for (let i = 0; i < 10; i++) {
 
     let chainPath = new Uint32Array([44, 60, accountId, 0, i]);
     const pkixPublicKeys: Uint8Array[] = [];
