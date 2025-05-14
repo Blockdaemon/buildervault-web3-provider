@@ -38,18 +38,6 @@ import * as ethers from "ethers"
 const provider = new ethers.BrowserProvider(eip1193Provider);
 ```
 
-## Usage with web3.js
-```sh
-npm install web3
-```
-
-```js
-import Web3 from "web3";
-
-const web3 = new Web3(eip1193Provider);
-```
-
-
 ## API Documentation
 
 ### BuildervaultProviderConfig

@@ -34,6 +34,7 @@ export async function signMessage(
     };
 
     partialSignaturePromises.push(func());
+    await new Promise(resolve => setTimeout(resolve, 1500));
   }
 
   await Promise.all(partialSignaturePromises);
@@ -76,28 +77,28 @@ export async function getWalletAccounts(
   for (let i = 0; i < 10; i++) {
 
     let chainPath = new Uint32Array([44, 60, accountId, 0, i]);
-    const pkixPublicKeys: Uint8Array[] = [];
+    const jsonPublicKeys: Uint8Array[] = [];
   
     for (const [_, client] of await TSMClients.entries()) {
       const ecdsaApi = client.ECDSA();
-      pkixPublicKeys.push(
+      jsonPublicKeys.push(
         await ecdsaApi.publicKey(masterKeyId, chainPath)
       );
     }
   
     // Validate public keys
-    for (let i = 1; i < pkixPublicKeys.length; i++) {
-        if (Buffer.compare(pkixPublicKeys[0], pkixPublicKeys[i]) !== 0) {
+    for (let i = 1; i < jsonPublicKeys.length; i++) {
+        if (Buffer.compare(jsonPublicKeys[0], jsonPublicKeys[i]) !== 0) {
           throw Error("public keys do not match");
         }
       }
       
-    const pkixPublicKey = pkixPublicKeys[0];
+    const jsonPublicKey = jsonPublicKeys[0];
   
     // Convert the public key into an Ethereum address
     const utils = TSMClients[0].Utils();
-    const publicKeyBytes = await utils.pkixPublicKeyToUncompressedPoint(
-      pkixPublicKey
+    const publicKeyBytes = await utils.jsonPublicKeyToUncompressedPoint(
+      jsonPublicKey
     );
   
     // Convert web3 publickey to address

@@ -16,7 +16,9 @@ import {
   keccak256,
   serializeTransaction,
   serializeSignature,
-  Signature
+  Signature,
+  hexToNumber,
+  hexToBigInt
 } from "viem";
 import { getHttpRpcClient, hashTypedData } from "viem/utils";
 import crypto from "crypto";
@@ -306,6 +308,37 @@ export const createEIP1193Provider = async (
           }
 
           const processedTransaction = preprocessTransaction({ ...transaction });
+          if (!processedTransaction.chainId) {
+            processedTransaction.chainId = hexToNumber(activeChain.chainId as `0x${string}`);
+          }
+
+          if (!processedTransaction.nonce) {
+            processedTransaction.nonce = hexToNumber(await request({
+              method: "eth_getTransactionCount",
+              params: [transaction.from, "pending"],
+            }));
+          }
+
+          if (!processedTransaction.gas) {
+            processedTransaction.gas = hexToBigInt(await request({
+              method: "eth_estimateGas",
+              params: [transaction],
+            }));
+          }
+
+          if (processedTransaction.type === 'eip1559' || processedTransaction.type === 'eip4844' || processedTransaction.type === 'eip7702') {
+            if (!processedTransaction.maxPriorityFeePerGas) {
+              processedTransaction.maxPriorityFeePerGas = hexToBigInt(await request({
+                method: "eth_maxPriorityFeePerGas",
+              }));
+            }
+
+            if (!processedTransaction.maxFeePerGas) {
+              processedTransaction.maxFeePerGas = hexToBigInt(await request({
+                method: "eth_gasPrice",
+              }));
+            }
+          }
 
           const serializedUnsignedTransaction = serializeTransaction({
             ...processedTransaction
@@ -329,7 +362,6 @@ export const createEIP1193Provider = async (
               v: signedMessage.v,
             }
           );
-          //console.log("signedTransaction", signedTransaction);
 
           setConnected(true, { chainId: activeChain.chainId });
           return signedTransaction;

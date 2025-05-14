@@ -28,7 +28,7 @@
     "README.md"
   ],
   "dependencies": {
-    "@sepior/tsmsdkv2": "^69.0.0",
+    "@sepior/tsmsdkv2": "^70.1.0",
     "asn1.js": "^5.4.1",
     "viem": "^2.7.19"
   },

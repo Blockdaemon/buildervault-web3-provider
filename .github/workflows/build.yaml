@@ -37,7 +37,7 @@ jobs:
         env:
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
           NEXUS_TOKEN: ${{ secrets.NEXUS_TOKEN }}
-        run: echo "${{ secrets.NEXUS_TOKEN }}" | docker login nexus.sepior.net:19001 -u "${{ secrets.NEXUS_USERNAME }}" --password-stdin
+        run: echo "${{ secrets.NEXUS_TOKEN }}" | docker login bv.sepior.net -u "${{ secrets.NEXUS_USERNAME }}" --password-stdin
 
       - name: Run BuilderVault TSM Demo
         working-directory: ./tsm-demo/tsm
